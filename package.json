@@ -1,0 +1,11 @@
+{
+  "name": "reasonlabs",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node -r ./server.js",
+    "tsc": "tsc -b",
+    "start:hr": "nodemon -r ./server.js"
+  },
+  "dependencies": {
+  }
+}
