@@ -1,122 +1,95 @@
 const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
+const { MongoClient } = require('mongodb');
+const { PizzaBuilder, PizzaShop, OrderObserver, Oven, Waiter } = require('./server');
 
-// Constants
-const DOUGH_PREP_TIME = 7000; // 7 seconds
-const TOPPING_PREP_TIME = 4000; // 4 seconds
-const OVEN_COOK_TIME = 10000; // 10 seconds
-const WAITER_SERVE_TIME = 5000; // 5 seconds
-
-// Function to simulate a chef preparing dough
-function prepareDough(orderIndex) {
-    console.log(`Dough chef started preparing dough for Order ${orderIndex}...`);
-    return new Promise(resolve => {
-        setTimeout(() => {
-            console.log(`Dough chef finished preparing dough for Order ${orderIndex}.`);
-            resolve();
-        }, DOUGH_PREP_TIME);
-    });
-}
-
-// Function to simulate a chef adding toppings
-function addToppings(orderIndex, toppings) {
-    console.log(`Topping chef started adding ${toppings.join(', ')} toppings for Order ${orderIndex}...`);
-    return new Promise(resolve => {
-        setTimeout(() => {
-            console.log(`Topping chef finished adding ${toppings.join(', ')} toppings for Order ${orderIndex}.`);
-            resolve();
-        }, TOPPING_PREP_TIME * toppings.length);
-    });
-}
-
-// Function to simulate the oven cooking the pizza
-function cookPizza(orderIndex) {
-    console.log(`Oven started cooking Order ${orderIndex}...`);
-    return new Promise(resolve => {
-        setTimeout(() => {
-            console.log(`Oven finished cooking Order ${orderIndex}.`);
-            resolve();
-        }, OVEN_COOK_TIME);
-    });
-}
-
-// Function to simulate the waiter serving the pizza
-function servePizza(orderIndex) {
-    console.log(`Waiter started serving Order ${orderIndex}...`);
-    return new Promise(resolve => {
-        setTimeout(() => {
-            console.log(`Waiter finished serving Order ${orderIndex}.`);
-            resolve();
-        }, WAITER_SERVE_TIME);
-    });
-}
-
-// Function to process each order
 async function processOrder(orderIndex, toppings) {
-    await prepareDough(orderIndex);
-    await addToppings(orderIndex, toppings);
-    await cookPizza(orderIndex);
-    await servePizza(orderIndex);
-    return { orderIndex, toppings };
+    const pizzaBuilder = new PizzaBuilder();
+    toppings.forEach(topping => pizzaBuilder.addTopping(topping));
+    const pizza = pizzaBuilder.build();
+
+    const pizzaShop = new PizzaShop();
+    pizzaShop.subscribe(new OrderObserver('ToppingChefObserver'));
+    pizzaShop.subscribe(new OrderObserver('OvenObserver'));
+    pizzaShop.subscribe(new OrderObserver('WaiterObserver'));
+
+    const oven = new Oven();
+    const waiter = new Waiter();
+
+    pizzaShop.broadcast(`Order ${orderIndex} has been started.`);
+    await oven.cook(orderIndex);
+    pizzaShop.broadcast(`Order ${orderIndex} has been cooked.`);
+    await waiter.serve(orderIndex);
+    pizzaShop.broadcast(`Order ${orderIndex} has been served.`);
+
+    return { orderIndex, toppings: pizza.toppings };
 }
 
-// Main function
-function main() {
-    const orders = [
-        { toppings: ["Cheese"] },
-        { toppings: ["Pepperoni", "Mushrooms"] },
-        { toppings: ["Chicken", "Onions", "Bell Peppers"] },
-        { toppings: ["Margherita"] },
-        { toppings: ["Sausage", "Olives", "Tomatoes"] }
-    ];
+async function saveOrderReportToDb(completedOrders) {
+    const url = 'mongodb://mongo:27017';
+    const dbName = 'pizzaOrders';
+    const client = new MongoClient(url);
 
-    const startTime = Date.now();
+    try {
+        await client.connect();
 
-    const orderPromises = orders.map((order, index) => {
-        return new Promise((resolve, reject) => {
-            const worker = new Worker(__filename, {
-                workerData: { orderIndex: index + 1, toppings: order.toppings }
-            });
+        console.log("Connected successfully to MongoDB server");
 
-            worker.on('message', resolve);
-            worker.on('error', reject);
-            worker.on('exit', (code) => {
-                if (code !== 0) {
-                    reject(new Error(`Worker stopped with exit code ${code}`));
-                }
-            });
-        });
-    });
+        const db = client.db(dbName);
+        const collection = db.collection('orders');
 
-    Promise.all(orderPromises)
-        .then(completedOrders => {
-            const endTime = Date.now();
-            const totalTime = endTime - startTime;
-
-            console.log('---- Order Report ----');
-            console.log(`Preparation Time (ms): ${totalTime}`);
-
-            completedOrders.forEach(order => {
-                console.log(`Order ${order.orderIndex}: ${order.toppings.join(', ')}`);
-            });
-        })
-        .catch(error => {
-            console.error(error);
-        });
+        // Insert all the orders to the database
+        const result = await collection.insertMany(completedOrders);
+        console.log(`Inserted ${result.insertedCount} documents into the collection.`);
+    } catch (err) {
+        console.error(err);
+    } finally {
+        await client.close();
+    }
 }
 
-// Worker thread
-if (!isMainThread) {
+if (isMainThread) {
+    function main() {
+        const orders = [
+            { toppings: ["Cheese"] },
+            { toppings: ["Pepperoni", "Mushrooms"] },
+            { toppings: ["Chicken", "Onions", "Bell Peppers"] },
+            { toppings: ["Margherita"] },
+            { toppings: ["Sausage", "Olives", "Tomatoes"] }
+        ];
+
+        const orderPromises = orders.map((order, index) => {
+            return new Promise((resolve, reject) => {
+                const worker = new Worker(__filename, {
+                    workerData: { orderIndex: index + 1, toppings: order.toppings }
+                });
+
+                worker.on('message', resolve);
+                worker.on('error', reject);
+                worker.on('exit', (code) => {
+                    if (code !== 0) {
+                        reject(new Error(`Worker stopped with exit code ${code}`));
+                    }
+                });
+            });
+        });
+
+        Promise.all(orderPromises)
+            .then(async completedOrders => {
+                console.log('---- Order Report ----');
+                completedOrders.forEach(order => {
+                    console.log(`Order ${order.orderIndex}: ${order.toppings.join(', ')}`);
+                });
+                // Save the order report to the database
+                await saveOrderReportToDb(completedOrders);
+            })
+            .catch(error => {
+                console.error(error);
+            });
+    }
+
+    main();
+} else {
     const { orderIndex, toppings } = workerData;
     processOrder(orderIndex, toppings)
-        .then(completedOrder => {
-            parentPort.postMessage(completedOrder);
-        })
-        .catch(error => {
-            console.error(error);
-            process.exit(1);
-        });
+        .then(completedOrder => parentPort.postMessage(completedOrder));
 }
-
-// Run the main function
-main();
-

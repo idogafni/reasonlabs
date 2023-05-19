@@ -2,10 +2,11 @@
   "name": "reasonlabs",
   "version": "1.0.0",
   "scripts": {
-    "start": "node -r ./server.js",
+    "start": "node server.js",
     "tsc": "tsc -b",
-    "start:hr": "nodemon -r ./server.js"
+    "start:hr": "nodemon server.js"
   },
   "dependencies": {
+    "mongodb": "^4.1.1"
   }
 }

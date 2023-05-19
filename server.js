@@ -1,13 +1,8 @@
-const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
-
-// Builder Pattern: PizzaBuilder
+// Improved Builder Pattern
 class Pizza {
-    constructor() {
-        this.toppings = [];
-    }
-
-    addTopping(topping) {
-        this.toppings.push(topping);
+    constructor(dough = "Regular Dough", toppings = []) {
+        this.dough = dough;
+        this.toppings = toppings;
     }
 }
 
@@ -16,155 +11,78 @@ class PizzaBuilder {
         this.pizza = new Pizza();
     }
 
-    buildDough() {
-        this.pizza.addTopping("Regular Dough");
+    addTopping(topping) {
+        this.pizza.toppings.push(topping);
+        return this;
     }
 
-    buildToppings() {
-        // Implementation for adding toppings
-    }
-
-    buildCooking() {
-        // Implementation for cooking process
-    }
-
-    getResult() {
+    build() {
         return this.pizza;
     }
 }
 
-// Observer Pattern: OrderObserver
+// Improved Observer Pattern
+class PizzaShop {
+    constructor() {
+        this.observers = [];
+    }
+
+    subscribe(observer) {
+        this.observers.push(observer);
+    }
+
+    broadcast(message) {
+        this.observers.forEach(observer => observer.notify(message));
+    }
+}
+
 class OrderObserver {
-    constructor(order) {
-        this.order = order;
+    constructor(name) {
+        this.name = name;
     }
 
-    notify() {
-        console.log(`Order ${this.order} has been completed.`);
-    }
-}
-
-class ToppingChefObserver extends OrderObserver {
-    notify() {
-        console.log(`Topping chef finished adding toppings for Order ${this.order}.`);
+    notify(message) {
+        console.log(`${this.name} notified: ${message}`);
     }
 }
 
-class OvenObserver extends OrderObserver {
-    notify() {
-        console.log(`Oven finished cooking Order ${this.order}.`);
-    }
-}
-
-class WaiterObserver extends OrderObserver {
-    notify() {
-        console.log(`Waiter finished serving Order ${this.order}.`);
-    }
-}
-
-// Singleton Pattern: Oven, Waiter
+// Improved Singleton Pattern with Concurrency
 class Oven {
     constructor() {
-        if (!Oven.instance) {
-            Oven.instance = this;
+        if (Oven._instance) {
+            return Oven._instance;
         }
-        return Oven.instance;
+        Oven._instance = this;
     }
 
-    cook(order) {
+    async cook(order) {
         console.log(`Oven started cooking Order ${order}...`);
-        // Cooking process
+        // Simulating the cooking process
+        await new Promise(resolve => setTimeout(resolve, 1000));
         console.log(`Oven finished cooking Order ${order}.`);
     }
 }
 
 class Waiter {
     constructor() {
-        if (!Waiter.instance) {
-            Waiter.instance = this;
+        if (Waiter._instance) {
+            return Waiter._instance;
         }
-        return Waiter.instance;
+        Waiter._instance = this;
     }
 
-    serve(order) {
+    async serve(order) {
         console.log(`Waiter started serving Order ${order}...`);
-        // Serving process
+        // Simulating the serving process
+        await new Promise(resolve => setTimeout(resolve, 1000));
         console.log(`Waiter finished serving Order ${order}.`);
     }
 }
 
-// Function to process each order in a worker thread
-function processOrder(orderIndex, toppings) {
-    const pizzaBuilder = new PizzaBuilder();
-    pizzaBuilder.buildDough();
-    // Add more steps to build the pizza
-
-    const pizza = pizzaBuilder.getResult();
-
-    const oven = new Oven();
-    const waiter = new Waiter();
-
-    const orderObserver = new OrderObserver(orderIndex);
-    const toppingChefObserver = new ToppingChefObserver(orderIndex);
-    const ovenObserver = new OvenObserver(orderIndex);
-    const waiterObserver = new WaiterObserver(orderIndex);
-
-    // Register observers
-    orderObserver.notify();
-    toppingChefObserver.notify();
-    ovenObserver.notify();
-    waiterObserver.notify();
-
-    oven.cook(orderIndex);
-    waiter.serve(orderIndex);
-
-    return { orderIndex, toppings };
-}
-
-// Main function
-function main() {
-    const orders = [
-        { toppings: ["Cheese"] },
-        { toppings: ["Pepperoni", "Mushrooms"] },
-        { toppings: ["Chicken", "Onions", "Bell Peppers"] },
-        { toppings: ["Margherita"] },
-        { toppings: ["Sausage", "Olives", "Tomatoes"] }
-    ];
-
-    const orderPromises= orders.map((order, index) => {
-        return new Promise((resolve, reject) => {
-            const worker = new Worker(__filename, {
-                workerData: { orderIndex: index + 1, toppings: order.toppings }
-            });
-
-            worker.on('message', resolve);
-            worker.on('error', reject);
-            worker.on('exit', (code) => {
-                if (code !== 0)
-                    reject(new Error(`Worker stopped with exit code ${code}`));
-            }
-            );
-        });
-    });
-
-    Promise.all(orderPromises)
-        .then(completedOrders => {
-            console.log('---- Order Report ----');
-            completedOrders.forEach(order => {
-                console.log('Order ${order.orderIndex}: ${order.toppings.join(', ')}');
-            });
-        })
-        .catch(error => {
-            console.error(error);
-        });
-}
-
-// Worker thread
-if (!isMainThread) {
-    const { orderIndex, toppings } = workerData;
-    const completedOrder = processOrder(orderIndex, toppings);
-    parentPort.postMessage(completedOrder);
-}
-
-// Run the main function
-main();
+module.exports = {
+    PizzaBuilder,
+    PizzaShop,
+    OrderObserver,
+    Oven,
+    Waiter,
+};

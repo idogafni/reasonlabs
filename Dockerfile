@@ -1,18 +1,13 @@
-# Specify the base image
-FROM node:18.14.2-alpine
+# Dockerfile
 
-# Set the working directory in the container
-WORKDIR /reasonlabs
+# Stage 1 - the build process
+FROM node:14-alpine as build-deps
 
-# Copy the application files to the container
-COPY . .
+WORKDIR /usr/src/app
 
-# Install dependencies
+COPY package*.json ./
 RUN npm install
 
-# Expose the port the application will run on
-EXPOSE 3000
+COPY . .
 
-# Set the command to run the application
-CMD [ "npm", "start" ]
-
+CMD ["node", "main.js"]
